@@ -59,6 +59,7 @@
             top: 0;
             left: 0;
             transform-origin: 0 0;
+            will-change: transform; /* 提升性能 */
         }
         
         .hex {
@@ -246,6 +247,16 @@
             .panel-mask.active {
                 display: block;
             }
+            
+            .zoom-controls {
+                bottom: 60px; /* 为移动端工具栏留出空间 */
+            }
+            
+            .zoom-btn {
+                width: 50px;
+                height: 50px;
+                font-size: 24px;
+            }
         }
         
         /* 桌面端保持原样 */
@@ -373,117 +384,16 @@
                 this.translateX = 0;
                 this.translateY = 0;
                 
+                // 触摸缩放相关
+                this.lastTouchDistance = 0;
+                this.initialScale = 1;
+                this.touchStartCenter = { x: 0, y: 0 };
+                
                 // 初始化
                 this.initEventListeners();
                 this.initMobileControls();
                 this.generateMap('medium', 'random');
-
-
-
-                this.lastTouchDistance = 0;
-                this.initialScale = 1;
-                this.touchStartCenter = { x: 0, y: 0 };
-        
-                this.initTouchEvents();
             }
-
-            initTouchEvents() {
-        // 单指拖动
-                this.mapContainer.addEventListener('touchstart', (e) => {
-                    if (e.touches.length === 1) {
-                        this.isDragging = true;
-                        this.lastX = e.touches[0].clientX;
-                        this.lastY = e.touches[0].clientY;
-                        e.preventDefault();
-                    }
-                    else if (e.touches.length === 2) {
-                        this.handlePinchStart(e);
-                        e.preventDefault();
-                    }
-                }, { passive: false });
-                
-                this.mapContainer.addEventListener('touchmove', (e) => {
-                    if (this.isDragging && e.touches.length === 1) {
-                        const touchX = e.touches[0].clientX;
-                        const touchY = e.touches[0].clientY;
-                        
-                        const dx = touchX - this.lastX;
-                        const dy = touchY - this.lastY;
-                        
-                        this.translateX += dx;
-                        this.translateY += dy;
-                        this.updateTransform();
-                        
-                        this.lastX = touchX;
-                        this.lastY = touchY;
-                        e.preventDefault();
-                    }
-                    else if (e.touches.length === 2) {
-                        this.handlePinchMove(e);
-                        e.preventDefault();
-                    }
-                }, { passive: false });
-                
-                this.mapContainer.addEventListener('touchend', () => {
-                    this.isDragging = false;
-                });
-            }
-
-            handlePinchStart(e) {
-                const touch1 = e.touches[0];
-                const touch2 = e.touches[1];
-                
-                this.lastTouchDistance = Math.hypot(
-                    touch2.clientX - touch1.clientX,
-                    touch2.clientY - touch1.clientY
-                );
-                
-                this.initialScale = this.scale;
-                
-                this.touchStartCenter = {
-                    x: (touch1.clientX + touch2.clientX) / 2,
-                    y: (touch1.clientY + touch2.clientY) / 2
-                };
-            }
-
-            handlePinchMove(e) {
-                const touch1 = e.touches[0];
-                const touch2 = e.touches[1];
-                
-                const currentDistance = Math.hypot(
-                    touch2.clientX - touch1.clientX,
-                    touch2.clientY - touch1.clientY
-                );
-                
-                if (this.lastTouchDistance > 0) {
-                    let scale = this.initialScale * (currentDistance / this.lastTouchDistance);
-                    scale = Math.min(Math.max(scale, 0.3), 3); // 限制缩放范围
-                    
-                    // 计算新中心点
-                    const currentCenter = {
-                        x: (touch1.clientX + touch2.clientX) / 2,
-                        y: (touch1.clientY + touch2.clientY) / 2
-                    };
-                    
-                    // 调整位置保持中心点稳定
-                    const centerOffsetX = currentCenter.x - this.touchStartCenter.x;
-                    const centerOffsetY = currentCenter.y - this.touchStartCenter.y;
-                    
-                    this.scale = scale;
-                    this.translateX += centerOffsetX;
-                    this.translateY += centerOffsetY;
-                    
-                    this.updateTransform();
-                }
-                
-                this.lastTouchDistance = currentDistance;
-            }
-
-            updateTransform() {
-                this.svg.style.transform = `translate3d(${this.translateX}px, ${this.translateY}px, 0) scale(${this.scale})`;
-            }
-
-
             
             initMobileControls() {
                 const toggleBtn = document.getElementById('mobile-toggle');
@@ -538,7 +448,7 @@
                     e.target.value = '';
                 });
                 
-                // 地图拖拽
+                // 鼠标拖拽
                 this.mapContainer.addEventListener('mousedown', (e) => {
                     if (e.button === 0) {
                         this.isDragging = true;
@@ -571,12 +481,16 @@
                     }
                 });
                 
-                // 触摸事件
+                // 触摸事件 - 单指拖动
                 this.mapContainer.addEventListener('touchstart', (e) => {
                     if (e.touches.length === 1) {
                         this.isDragging = true;
                         this.lastX = e.touches[0].clientX;
                         this.lastY = e.touches[0].clientY;
+                        e.preventDefault();
+                    }
+                    else if (e.touches.length === 2) {
+                        this.handlePinchStart(e);
                         e.preventDefault();
                     }
                 }, { passive: false });
@@ -597,13 +511,18 @@
                         this.lastY = touchY;
                         e.preventDefault();
                     }
+                    else if (e.touches.length === 2) {
+                        this.handlePinchMove(e);
+                        e.preventDefault();
+                    }
                 }, { passive: false });
                 
                 this.mapContainer.addEventListener('touchend', () => {
                     this.isDragging = false;
+                    this.lastTouchDistance = 0;
                 });
                 
-                // 缩放控制
+                // 缩放控制按钮
                 document.getElementById('zoom-in').addEventListener('click', () => {
                     this.scale *= 1.2;
                     this.updateTransform();
@@ -612,11 +531,6 @@
                 document.getElementById('zoom-out').addEventListener('click', () => {
                     this.scale /= 1.2;
                     this.updateTransform();
-                });
-                
-                // 阻止控制面板的拖拽事件冒泡
-                document.querySelector('.control-panel').addEventListener('mousedown', (e) => {
-                    e.stopPropagation();
                 });
                 
                 // 鼠标滚轮缩放
@@ -642,8 +556,64 @@
                 });
             }
             
+            // 双指捏合开始
+            handlePinchStart(e) {
+                const touch1 = e.touches[0];
+                const touch2 = e.touches[1];
+                
+                // 计算初始距离
+                this.lastTouchDistance = Math.hypot(
+                    touch2.clientX - touch1.clientX,
+                    touch2.clientY - touch1.clientY
+                );
+                
+                // 保存初始缩放值
+                this.initialScale = this.scale;
+                
+                // 计算双指中心点
+                this.touchStartCenter = {
+                    x: (touch1.clientX + touch2.clientX) / 2,
+                    y: (touch1.clientY + touch2.clientY) / 2
+                };
+            }
+            
+            // 双指捏合移动
+            handlePinchMove(e) {
+                const touch1 = e.touches[0];
+                const touch2 = e.touches[1];
+                
+                // 计算当前距离
+                const currentDistance = Math.hypot(
+                    touch2.clientX - touch1.clientX,
+                    touch2.clientY - touch1.clientY
+                );
+                
+                // 计算缩放比例
+                if (this.lastTouchDistance > 0) {
+                    const scale = this.initialScale * (currentDistance / this.lastTouchDistance);
+                    this.scale = Math.min(Math.max(scale, 0.3), 3); // 限制缩放范围
+                    
+                    // 计算当前中心点
+                    const currentCenter = {
+                        x: (touch1.clientX + touch2.clientX) / 2,
+                        y: (touch1.clientY + touch2.clientY) / 2
+                    };
+                    
+                    // 调整位置保持中心点稳定
+                    const centerOffsetX = currentCenter.x - this.touchStartCenter.x;
+                    const centerOffsetY = currentCenter.y - this.touchStartCenter.y;
+                    
+                    this.translateX += centerOffsetX;
+                    this.translateY += centerOffsetY;
+                    
+                    this.updateTransform();
+                }
+                
+                this.lastTouchDistance = currentDistance;
+            }
+            
             updateTransform() {
-                this.svg.style.transform = `translate(${this.translateX}px, ${this.translateY}px) scale(${this.scale})`;
+                this.svg.style.transform = `translate3d(${this.translateX}px, ${this.translateY}px, 0) scale(${this.scale})`;
             }
             
             generateMap(size = 'medium', style = 'random') {
@@ -823,6 +793,5 @@
         // 初始化地图生成器
         new HexMapGenerator();
     </script>
-
 </body>
 </html>
