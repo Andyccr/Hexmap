@@ -377,7 +377,113 @@
                 this.initEventListeners();
                 this.initMobileControls();
                 this.generateMap('medium', 'random');
+
+
+
+                this.lastTouchDistance = 0;
+                this.initialScale = 1;
+                this.touchStartCenter = { x: 0, y: 0 };
+        
+                this.initTouchEvents();
             }
+
+            initTouchEvents() {
+        // 单指拖动
+                this.mapContainer.addEventListener('touchstart', (e) => {
+                    if (e.touches.length === 1) {
+                        this.isDragging = true;
+                        this.lastX = e.touches[0].clientX;
+                        this.lastY = e.touches[0].clientY;
+                        e.preventDefault();
+                    }
+                    else if (e.touches.length === 2) {
+                        this.handlePinchStart(e);
+                        e.preventDefault();
+                    }
+                }, { passive: false });
+                
+                this.mapContainer.addEventListener('touchmove', (e) => {
+                    if (this.isDragging && e.touches.length === 1) {
+                        const touchX = e.touches[0].clientX;
+                        const touchY = e.touches[0].clientY;
+                        
+                        const dx = touchX - this.lastX;
+                        const dy = touchY - this.lastY;
+                        
+                        this.translateX += dx;
+                        this.translateY += dy;
+                        this.updateTransform();
+                        
+                        this.lastX = touchX;
+                        this.lastY = touchY;
+                        e.preventDefault();
+                    }
+                    else if (e.touches.length === 2) {
+                        this.handlePinchMove(e);
+                        e.preventDefault();
+                    }
+                }, { passive: false });
+                
+                this.mapContainer.addEventListener('touchend', () => {
+                    this.isDragging = false;
+                });
+            }
+
+            handlePinchStart(e) {
+                const touch1 = e.touches[0];
+                const touch2 = e.touches[1];
+                
+                this.lastTouchDistance = Math.hypot(
+                    touch2.clientX - touch1.clientX,
+                    touch2.clientY - touch1.clientY
+                );
+                
+                this.initialScale = this.scale;
+                
+                this.touchStartCenter = {
+                    x: (touch1.clientX + touch2.clientX) / 2,
+                    y: (touch1.clientY + touch2.clientY) / 2
+                };
+            }
+
+            handlePinchMove(e) {
+                const touch1 = e.touches[0];
+                const touch2 = e.touches[1];
+                
+                const currentDistance = Math.hypot(
+                    touch2.clientX - touch1.clientX,
+                    touch2.clientY - touch1.clientY
+                );
+                
+                if (this.lastTouchDistance > 0) {
+                    let scale = this.initialScale * (currentDistance / this.lastTouchDistance);
+                    scale = Math.min(Math.max(scale, 0.3), 3); // 限制缩放范围
+                    
+                    // 计算新中心点
+                    const currentCenter = {
+                        x: (touch1.clientX + touch2.clientX) / 2,
+                        y: (touch1.clientY + touch2.clientY) / 2
+                    };
+                    
+                    // 调整位置保持中心点稳定
+                    const centerOffsetX = currentCenter.x - this.touchStartCenter.x;
+                    const centerOffsetY = currentCenter.y - this.touchStartCenter.y;
+                    
+                    this.scale = scale;
+                    this.translateX += centerOffsetX;
+                    this.translateY += centerOffsetY;
+                    
+                    this.updateTransform();
+                }
+                
+                this.lastTouchDistance = currentDistance;
+            }
+
+            updateTransform() {
+                this.svg.style.transform = `translate3d(${this.translateX}px, ${this.translateY}px, 0) scale(${this.scale})`;
+            }
+
+
             
             initMobileControls() {
                 const toggleBtn = document.getElementById('mobile-toggle');
